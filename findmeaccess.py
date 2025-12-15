@@ -738,6 +738,7 @@ def main():
     args = parser.parse_args()
     if len(sys.argv) == 1:
       parser.print_help()
+      sys.exit()
 
     if args.proxy:
       proxies = {
