@@ -195,7 +195,7 @@ def refresh_authenticate(client_id, user_agent, proxy, tenant_id, refresh_token,
 
 
 # main authentication function
-def authenticate(username, password, resource, client_id, user_agent, proxy, get_token=False):
+def authenticate(username, password, resource, client_id, user_agent, proxy, get_token=False, unsafe=False):
     
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     url = "https://login.microsoft.com/common/oauth2/token" 
@@ -302,7 +302,11 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
 
         # Locked out account or hitting smart lockout
         elif "AADSTS50053" in response.text:
-            raise ValueError(colored(f"[!] The account {username} appears to be locked.","red", attrs=['bold']))
+            message = colored(f"[!] {resource[0]} - {client_id[0]} - The account {username} appears to be locked.","red", attrs=['bold'])
+            if unsafe:
+                print(message)
+            else:
+                raise ValueError(message)
         
         # Disabled account
         elif "AADSTS50057" in response.text:
@@ -363,7 +367,7 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
    
 
 # do a test authentication to validate creds and to prevent a bunch of attempts on accounts that throw errors
-def do_test_auth(username, password, proxy):
+def do_test_auth(username, password, proxy, unsafe=False):
     print("[*] Performing test authentication")
     ua_key = "Windows 10 Chrome"
     ua_value = user_agents[ua_key]
@@ -374,10 +378,10 @@ def do_test_auth(username, password, proxy):
     client_key = "Outlook Mobile"
     client_value = client_ids[client_key]
     client_id = (client_key, client_value)
-    authenticate(username, password, resource, client_id, user_agent, proxy)
+    authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe)
 
 # function to get tokens with a password
-def get_token_with_password(username, password, custom_resource, custom_client_id, custom_user_agent, proxy):
+def get_token_with_password(username, password, custom_resource, custom_client_id, custom_user_agent, proxy, unsafe=False):
     print("[*] Getting token")
     if custom_user_agent is None:
       print("[-] No User Agent specified, using Windows 10 Chrome")
@@ -418,7 +422,7 @@ def get_token_with_password(username, password, custom_resource, custom_client_i
        client_id = ("Custom", custom_client_id)
 
     try:
-      authenticate(username, password, resource, client_id, user_agent, proxy, True)
+      authenticate(username, password, resource, client_id, user_agent, proxy, True, unsafe)
     except ValueError as e:
        print(e)
 
@@ -617,8 +621,8 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
 
 # handle each combination of parameters
 def handle_combination(combination):
-    username, password, resource, client_id, user_agent, proxy = combination
-    return authenticate(username, password, resource, client_id, user_agent, proxy)
+    username, password, resource, client_id, user_agent, proxy, unsafe = combination
+    return authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe)
 
 # helper to resolve a single entry against a dict, returning (display_name, value) tuple
 def resolve_entry(entry, lookup_dict, label):
@@ -656,7 +660,7 @@ def parse_config_file(filepath):
     return sections['clients'], sections['resources'], sections['user_agents']
 
 # mass check resources, client ids, and user agents
-def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None):
+def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None, unsafe=False):
   print("[*] Starting checks")
   results = []
   resources_to_check = {}
@@ -707,7 +711,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
       user_agents_to_use = None
 
   if user_agents_to_use is not None:
-      combinations = [(username, password, resource, client_id, user_agent, proxy)
+      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()
                       for user_agent in user_agents_to_use.items()]
@@ -716,7 +720,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           single_ua = resolve_entry(custom_user_agent, user_agents, "user_agent")
       else:
           single_ua = ("Windows 10 Chrome", user_agents["Windows 10 Chrome"])
-      combinations = [(username, password, resource, client_id, single_ua, proxy)
+      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()]
 
@@ -788,11 +792,12 @@ def add_shared_arguments(parser):
     parser.add_argument('-c', metavar="clientid", help="clientid to use", type=str)
     parser.add_argument('-r', metavar="resource", help="resource to use", type=str)
     parser.add_argument('--threads', help="Number of threads to run (Default: 10 threads)", type=int,default=10)
+    parser.add_argument('--unsafe', help="Continue testing when AADSTS50053 indicates an account lockout", action='store_true')
     parser.add_argument('-u', metavar="user", help="User to check", type=str)
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
 def main():
-    banner = "\nFindMeAccess v3.1.1\n"
+    banner = "\nFindMeAccess v3.1.2\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
@@ -865,7 +870,7 @@ def main():
         config_clients, config_resources, config_uas = parse_config_file(args.config) if args.config else ({}, {}, {})
 
         try:
-          do_test_auth(args.u, password, proxies)
+          do_test_auth(args.u, password, proxies, args.unsafe)
           print("[+] Test authentication successful!")
 
         except Exception as e:
@@ -874,7 +879,7 @@ def main():
           sys.exit()
 
         try:
-          results, total = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None)
+          results, total = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None, args.unsafe)
           if total < 50:
             print_table(results)
           write_results(args.u, results)
@@ -896,7 +901,7 @@ def main():
             else:
                 password = args.p
 
-            get_token_with_password(args.u, password, args.r, args.c, args.user_agent, proxies)
+            get_token_with_password(args.u, password, args.r, args.c, args.user_agent, proxies, args.unsafe)
 
           else:
             if not args.d:
