@@ -1,4 +1,4 @@
 tabulate
 termcolor
-requests
+requests[socks]
 lxml

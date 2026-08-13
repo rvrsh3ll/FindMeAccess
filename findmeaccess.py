@@ -775,7 +775,15 @@ def print_table(results):
   print("\n\n"+tabulate(table_data, headers=[colored("Resource", attrs=['bold']), colored("Accessible w/o MFA",attrs=['bold']), colored("Accessible Client IDs",attrs=['bold'])], tablefmt="grid"))
 
 def add_shared_arguments(parser):
-    parser.add_argument('--proxy', metavar="proxy", help="HTTP proxy to use - ie http://127.0.0.1:8080", type=str)
+    parser.add_argument(
+        '--proxy',
+        metavar="proxy",
+        help=(
+            "HTTP or SOCKS proxy to use - ie http://127.0.0.1:8080 "
+            "or socks5h://127.0.0.1:1080"
+        ),
+        type=str,
+    )
     parser.add_argument('--user_agent', help="User Agent to use", type=str)
     parser.add_argument('-c', metavar="clientid", help="clientid to use", type=str)
     parser.add_argument('-r', metavar="resource", help="resource to use", type=str)
