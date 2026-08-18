@@ -195,10 +195,13 @@ def refresh_authenticate(client_id, user_agent, proxy, tenant_id, refresh_token,
 
 
 # main authentication function
-def authenticate(username, password, resource, client_id, user_agent, proxy, get_token=False, unsafe=False):
+def authenticate(username, password, resource, client_id, user_agent, proxy, get_token=False, unsafe=False, tenant_id=None):
     
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    url = "https://login.microsoft.com/common/oauth2/token" 
+    if tenant_id:
+        url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/token"
+    else:
+        url = "https://login.microsoft.com/common/oauth2/token"
 
     parameters = {
         'resource': resource[1],
@@ -367,7 +370,7 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
    
 
 # do a test authentication to validate creds and to prevent a bunch of attempts on accounts that throw errors
-def do_test_auth(username, password, proxy, unsafe=False):
+def do_test_auth(username, password, proxy, unsafe=False, tenant_id=None):
     print("[*] Performing test authentication")
     ua_key = "Windows 10 Chrome"
     ua_value = user_agents[ua_key]
@@ -378,10 +381,10 @@ def do_test_auth(username, password, proxy, unsafe=False):
     client_key = "Outlook Mobile"
     client_value = client_ids[client_key]
     client_id = (client_key, client_value)
-    authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe)
+    authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe, tenant_id=tenant_id)
 
 # function to get tokens with a password
-def get_token_with_password(username, password, custom_resource, custom_client_id, custom_user_agent, proxy, unsafe=False):
+def get_token_with_password(username, password, custom_resource, custom_client_id, custom_user_agent, proxy, unsafe=False, tenant_id=None):
     print("[*] Getting token")
     if custom_user_agent is None:
       print("[-] No User Agent specified, using Windows 10 Chrome")
@@ -422,7 +425,7 @@ def get_token_with_password(username, password, custom_resource, custom_client_i
        client_id = ("Custom", custom_client_id)
 
     try:
-      authenticate(username, password, resource, client_id, user_agent, proxy, True, unsafe)
+      authenticate(username, password, resource, client_id, user_agent, proxy, True, unsafe, tenant_id)
     except ValueError as e:
        print(e)
 
@@ -621,8 +624,8 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
 
 # handle each combination of parameters
 def handle_combination(combination):
-    username, password, resource, client_id, user_agent, proxy, unsafe = combination
-    return authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe)
+    username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id = combination
+    return authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe, tenant_id=tenant_id)
 
 # helper to resolve a single entry against a dict, returning (display_name, value) tuple
 def resolve_entry(entry, lookup_dict, label):
@@ -660,7 +663,7 @@ def parse_config_file(filepath):
     return sections['clients'], sections['resources'], sections['user_agents']
 
 # mass check resources, client ids, and user agents
-def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None, unsafe=False):
+def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None, unsafe=False, tenant_id=None):
   print("[*] Starting checks")
   results = []
   resources_to_check = {}
@@ -711,7 +714,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
       user_agents_to_use = None
 
   if user_agents_to_use is not None:
-      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe)
+      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()
                       for user_agent in user_agents_to_use.items()]
@@ -720,7 +723,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           single_ua = resolve_entry(custom_user_agent, user_agents, "user_agent")
       else:
           single_ua = ("Windows 10 Chrome", user_agents["Windows 10 Chrome"])
-      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe)
+      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe, tenant_id)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()]
 
@@ -760,21 +763,23 @@ def write_results(username, results):
 def print_table(results):
   #filter out None results
   filtered_results = [x for x in results if x is not None]
+  accessible_clients = {resource: set() for resource in final_results}
 
   for result in filtered_results:
     resource_name = result[0][0]
-    if resource_name in final_results:
-      final_results[resource_name]['Accessible'] = True
-      final_results[resource_name]['Accessible Client IDs'] += 1
+    client_id = result[1][1]
+    if resource_name in accessible_clients:
+      accessible_clients[resource_name].add(client_id)
         
   table_data = []
-  for resource, e in final_results.items():
-    accessible = e['Accessible']
+  for resource in final_results:
+    client_count = len(accessible_clients[resource])
+    accessible = client_count > 0
     if accessible:
         accessible = colored(accessible, 'green',attrs=['bold'])
     else:
        accessible = colored(accessible, 'red',attrs=['bold'])
-    table_data.append([resource, accessible, e['Accessible Client IDs']])
+    table_data.append([resource, accessible, client_count])
 
   print("\n\n"+tabulate(table_data, headers=[colored("Resource", attrs=['bold']), colored("Accessible w/o MFA",attrs=['bold']), colored("Accessible Client IDs",attrs=['bold'])], tablefmt="grid"))
 
@@ -797,7 +802,7 @@ def add_shared_arguments(parser):
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
 def main():
-    banner = "\nFindMeAccess v3.1.2\n"
+    banner = "\nFindMeAccess v3.2\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
@@ -810,6 +815,7 @@ def main():
     audit_parser.add_argument('--list_ua', help="List all user agents", action='store_true')
     audit_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False) 
     audit_parser.add_argument('--config', metavar="config_file", help="File containing clients, resources, and user_agents", type=str)
+    audit_parser.add_argument('--tenant', metavar="tenant_domain", help="Tenant domain to resolve and use for authentication", type=str)
 
     token_parser = subparsers.add_parser("token", help="Used for getting tokens")
     add_shared_arguments(token_parser)
@@ -818,6 +824,7 @@ def main():
     token_parser.add_argument('-s',  help="Token scope - show with --list_scopes", type=str)
     token_parser.add_argument('--refresh_token', help="Refresh token", type=str)
     token_parser.add_argument('--get_all', help="Get tokens for every scope", action='store_true')
+    token_parser.add_argument('--tenant', metavar="tenant_domain", help="Tenant domain to resolve and use for password authentication", type=str)
 
     adfs_parser = subparsers.add_parser("adfs", help="Used for auditing gaps in federated setups with ADFS")
     add_shared_arguments(adfs_parser)
@@ -869,8 +876,13 @@ def main():
           sys.exit()
         config_clients, config_resources, config_uas = parse_config_file(args.config) if args.config else ({}, {}, {})
 
+        tenant_id = get_tenant_id(args.tenant, proxies) if args.tenant else None
+        if args.tenant and tenant_id is None:
+          print("[-] Exiting due to tenant ID failure - check tenant domain name")
+          sys.exit()
+
         try:
-          do_test_auth(args.u, password, proxies, args.unsafe)
+          do_test_auth(args.u, password, proxies, args.unsafe, tenant_id)
           print("[+] Test authentication successful!")
 
         except Exception as e:
@@ -879,9 +891,8 @@ def main():
           sys.exit()
 
         try:
-          results, total = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None, args.unsafe)
-          if total < 50:
-            print_table(results)
+          results, _ = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None, args.unsafe, tenant_id)
+          print_table(results)
           write_results(args.u, results)
 
         except Exception as e:
@@ -901,7 +912,12 @@ def main():
             else:
                 password = args.p
 
-            get_token_with_password(args.u, password, args.r, args.c, args.user_agent, proxies, args.unsafe)
+            tenant_id = get_tenant_id(args.tenant, proxies) if args.tenant else None
+            if args.tenant and tenant_id is None:
+              print("[-] Exiting due to tenant ID failure - check tenant domain name")
+              sys.exit()
+
+            get_token_with_password(args.u, password, args.r, args.c, args.user_agent, proxies, args.unsafe, tenant_id)
 
           else:
             if not args.d:

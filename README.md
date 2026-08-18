@@ -47,6 +47,8 @@ options:
   --list_ua             List all user agents
   --ua_all              Check all users agents (Default: False)
   --config config_file  File containing clients, resources, and user agents
+  --tenant tenant_domain
+                        Tenant domain to resolve and use for authentication
 ```
 
 For an initial run you just need to provide a username and password. The tool will first try all combinations of resources, client ids, but will only try using one user agent (Windows 10 Chrome). 
@@ -55,6 +57,12 @@ You can choose to pass the password via command line with `-p` or just provide t
 
 ```
 python findmeaccess.py audit -u username@domain.com
+```
+
+To authenticate against a specific tenant, pass its domain name. FindMeAccess resolves the domain to a tenant ID before starting the audit. If this option is omitted, authentication continues to use the original `common` endpoint.
+
+```
+python findmeaccess.py audit -u username@domain.com --tenant domain.com
 ```
 
 For safety reasons, the tool will initially perform a test authentication and if successful, will continue. Otherwise the tool will exit. This helps prevent unintended lockouts via incorrect passwords, as well as just keep the tool efficient and prevent attempts with incorrect usernames, incorrect tenants, etc.
@@ -221,6 +229,8 @@ options:
   --refresh_token REFRESH_TOKEN
                         Refresh token
   --get_all             Get tokens for every scope
+  --tenant tenant_domain
+                        Tenant domain to resolve and use for password authentication
 ```
 
 
@@ -230,6 +240,7 @@ If you do find gaps in MFA you can get tokens using `findmeaccess.py token` , al
 ```
 python findmeaccess.py token -u username@domain.com  -r "Microsoft Graph API" -c "Microsoft Azure PowerShell"
 python findmeaccess.py token -u username@domain.com  -r "https://graph.microsoft.com" -c "1950a258-227b-4e31-a9cf-717495945fc2"
+python findmeaccess.py token -u username@domain.com --tenant domain.com -r "Microsoft Graph API" -c "Microsoft Azure PowerShell"
 ```
 
 Refresh tokens can also be used to get tokens for other services - i.e. TokenTactics
